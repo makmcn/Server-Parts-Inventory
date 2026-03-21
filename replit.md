@@ -2,6 +2,7 @@
 
 ## Overview
 
+Server parts warehouse management system (Складской учёт запчастей для серверов).
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
 ## Stack
@@ -15,20 +16,24 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + TailwindCSS + shadcn/ui
+- **Charts**: Recharts
+- **Icons**: lucide-react
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   └── warehouse/          # React frontend (warehouse management UI)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
 ├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
+│   └── src/seed.ts         # Database seeding script
 ├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
 ├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
 ├── tsconfig.json           # Root TS project references
@@ -56,41 +61,47 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
+- Routes:
+  - `health.ts` — GET /healthz
+  - `categories.ts` — GET/POST/DELETE /categories
+  - `suppliers.ts` — GET/POST/PUT/DELETE /suppliers
+  - `warehouses.ts` — GET/POST/DELETE /warehouses
+  - `parts.ts` — GET/POST/GET/:id/PUT/:id/DELETE/:id /parts (with search/filter)
+  - `transactions.ts` — GET/POST /transactions (with automatic stock update)
+  - `dashboard.ts` — GET /dashboard/stats
 - Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+
+### `artifacts/warehouse` (`@workspace/warehouse`)
+
+React + Vite frontend, mounted at `/`. Pages:
+- Dashboard — statistics, recent transactions, top categories chart
+- Parts Catalog (`/parts`) — table with CRUD, search, filters
+- Transactions (`/transactions`) — journal with filtering
+- Categories, Suppliers, Warehouses — supporting entity management
 
 ### `lib/db` (`@workspace/db`)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+Database layer using Drizzle ORM with PostgreSQL. Schema:
+- `categories` — part categories
+- `suppliers` — supplier companies
+- `warehouses` — storage locations
+- `parts` — parts catalog (with quantity tracking)
+- `transactions` — inventory movements (receipt/issue/adjustment/transfer)
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
+OpenAPI 3.1 spec. Codegen: `pnpm --filter @workspace/api-spec run codegen`
 
 ### `scripts` (`@workspace/scripts`)
 
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- `pnpm --filter @workspace/scripts run seed` — seed demo data
+
+## Known Issues / Notes
+
+- `History` from lucide-react conflicts with browser native `History`. Always import as `History as HistoryIcon`.
+- When importing types from `@workspace/api-client-react`, use the package root (`from "@workspace/api-client-react"`), not deep paths.
+
+## Production Migrations
+
+In development: `pnpm --filter @workspace/db run push`
+In production: handled automatically by Replit on deployment.

@@ -1,0 +1,7 @@
+packages:
+  "recharts": "For rendering dashboard statistics and top category charts"
+  "date-fns": "For formatting dates in transaction logs and history"
+images: []
+notes:
+  - "Importing all React Query hooks directly from the monorepo generated package @workspace/api-client-react"
+  - "Assuming UI components exist in src/components/ui/ based on the directory structure provided"
